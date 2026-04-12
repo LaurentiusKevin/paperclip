@@ -116,3 +116,39 @@ jobs:
             done
             echo "Container failed to become healthy"
             exit 1
+
+      - name: Deploy OpenCode
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_INSTANCE_IP }}
+          username: ${{ env.OCI_SSH_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            # Stop and remove existing OpenCode container
+            docker stop opencode || true
+            docker rm opencode || true
+
+            # Run OpenCode container
+            docker run -d \
+              --name opencode \
+              --restart unless-stopped \
+              --network paperclip-network \
+              -p 4096:4096 \
+              -e OPENCODE_PORT="4096" \
+              -e OPENCODE_HOSTNAME="0.0.0.0" \
+              -e ZEN_API_KEY="${{ secrets.ZEN_API_KEY }}" \
+              -v opencode-config:/root/.config/opencode \
+              -v opencode-data:/root/.local/share/opencode \
+              smanx/opencode:latest
+
+            # Wait for OpenCode to be ready
+            for i in {1..30}; do
+              if docker exec opencode curl -f http://localhost:4096 >/dev/null 2>&1; then
+                echo "OpenCode is ready"
+                exit 0
+              fi
+              echo "Waiting for OpenCode to be ready... ($i/30)"
+              sleep 2
+            done
+            echo "OpenCode failed to become ready"
+            exit 1
