@@ -42,7 +42,7 @@ jobs:
             ${{ steps.image.outputs.ghcr_image }}:latest
             ${{ steps.image.outputs.ghcr_image }}:${{ github.sha }}
 
-  deploy:
+  deploy-paperclip:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: echo "ghcr_image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy via SSH
+      - name: Deploy Paperclip to Oracle Cloud
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.OCI_INSTANCE_IP }}
@@ -117,13 +117,19 @@ jobs:
             echo "Container failed to become healthy"
             exit 1
 
-      - name: Deploy OpenCode
+  deploy-opencode:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy OpenCode to Oracle Cloud
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.OCI_INSTANCE_IP }}
           username: ${{ env.OCI_SSH_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
+            # Create network for services (in case it doesn't exist)
+            docker network create paperclip-network || true
+
             # Stop and remove existing OpenCode container
             docker stop opencode || true
             docker rm opencode || true
