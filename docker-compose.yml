@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: paperclip-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: paperclip
+      POSTGRES_DB: paperclip
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  paperclip:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: paperclip-app
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    environment:
+      DATABASE_URL: postgres://paperclip:paperclip@postgres:5432/paperclip
+      PORT: 3100
+      HOST: 0.0.0.0
+      SERVE_UI: "true"
+      PAPERCLIP_HOME: /paperclip
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
+      PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - paperclip_data:/paperclip
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  paperclip_data:
+    driver: local

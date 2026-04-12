@@ -5,7 +5,6 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates gosu curl git wget ripgrep python3 \
   && mkdir -p -m 755 /etc/apt/keyrings \
   && wget -nv -O/etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-  && echo "20e0125d6f6e077a9ad46f03371bc26d90b04939fb95170f5a1905099cc6bcc0  /etc/apt/keyrings/githubcli-archive-keyring.gpg" | sha256sum -c - \
   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
   && mkdir -p -m 755 /etc/apt/sources.list.d \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
@@ -59,9 +58,6 @@ RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/cod
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
-COPY scripts/docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
 ENV NODE_ENV=production \
   HOME=/paperclip \
   HOST=0.0.0.0 \
@@ -79,5 +75,5 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 3100
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+USER node
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

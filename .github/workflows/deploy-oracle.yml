@@ -1,0 +1,118 @@
+name: Build and Deploy to Oracle Cloud (AMD64)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  OCI_SSH_USER: ubuntu
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalize GHCR image name
+        id: image
+        shell: bash
+        run: echo "ghcr_image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push AMD64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.ghcr_image }}:latest
+            ${{ steps.image.outputs.ghcr_image }}:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Normalize GHCR image name
+        id: image
+        shell: bash
+        run: echo "ghcr_image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_INSTANCE_IP }}
+          username: ${{ env.OCI_SSH_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            # Login to GHCR
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Pull latest image
+            docker pull ${{ steps.image.outputs.ghcr_image }}:latest
+
+            # Stop and remove existing container
+            docker stop paperclip || true
+            docker rm paperclip || true
+
+            # Clean up corrupted volumes if they exist
+            # Check for nested paperclip directories and clean them up
+            docker volume inspect paperclip-data >/dev/null 2>&1 && \
+            docker run --rm -v paperclip-data:/data alpine sh -c \
+              'find /data -type d -name "paperclip" -path "*/instances/default/projects/*/_default/paperclip" -exec rm -rf {} + 2>/dev/null || true'
+
+            # Additional cleanup: remove any deeply nested duplicate paths
+            docker volume inspect paperclip-data >/dev/null 2>&1 && \
+            docker run --rm -v paperclip-data:/data alpine sh -c \
+              'find /data/instances/default/projects -type d -name "_default" | while read dir; do
+                if [ -d "$dir/paperclip/instances" ]; then
+                  echo "Cleaning up nested path in $dir"
+                  cp -r "$dir/paperclip/instances/default/projects"/*"/_default"/* "$dir/" 2>/dev/null || true
+                  rm -rf "$dir/paperclip"
+                fi
+              done'
+
+            # Create network for services
+            docker network create paperclip-network || true
+
+            # Run container
+            docker run -d \
+              --name paperclip \
+              --restart unless-stopped \
+              --network paperclip-network \
+              -p 5000:5000 \
+              --memory="1g" \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              -e PORT="5000" \
+              -e SERVE_UI="true" \
+              -e PAPERCLIP_DEPLOYMENT_MODE="${{ secrets.PAPERCLIP_DEPLOYMENT_MODE }}" \
+              -e PAPERCLIP_DEPLOYMENT_EXPOSURE="${{ secrets.PAPERCLIP_DEPLOYMENT_EXPOSURE }}" \
+              -e PAPERCLIP_PUBLIC_URL="${{ secrets.PAPERCLIP_PUBLIC_URL }}" \
+              -e BETTER_AUTH_SECRET="${{ secrets.BETTER_AUTH_SECRET }}" \
+              -e NODE_ENV="production" \
+              ${{ steps.image.outputs.ghcr_image }}:latest
+
+            # Wait for container to be healthy
+            for i in {1..30}; do
+              if docker exec paperclip curl -f http://localhost:5000/api/health >/dev/null 2>&1; then
+                echo "Container is healthy"
+                exit 0
+              fi
+              echo "Waiting for container to be healthy... ($i/30)"
+              sleep 2
+            done
+            echo "Container failed to become healthy"
+            exit 1
