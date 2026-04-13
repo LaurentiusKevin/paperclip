@@ -98,8 +98,8 @@ jobs:
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e PORT="5000" \
               -e SERVE_UI="true" \
-              -e PAPERCLIP_DEPLOYMENT_MODE="${{ secrets.PAPERCLIP_DEPLOYMENT_MODE }}" \
-              -e PAPERCLIP_DEPLOYMENT_EXPOSURE="${{ secrets.PAPERCLIP_DEPLOYMENT_EXPOSURE }}" \
+              -e PAPERCLIP_DEPLOYMENT_MODE="authenticated" \
+              -e PAPERCLIP_DEPLOYMENT_EXPOSURE="private" \
               -e PAPERCLIP_PUBLIC_URL="${{ secrets.PAPERCLIP_PUBLIC_URL }}" \
               -e BETTER_AUTH_SECRET="${{ secrets.BETTER_AUTH_SECRET }}" \
               -e NODE_ENV="production" \
